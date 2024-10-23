@@ -1,3 +1,5 @@
+const jwt = require('jsonwebtoken');
+const User = require('../users/users-model');
 const { JWT_SECRET } = require("../secrets"); // use this secret!
 
 const restricted = (req, res, next) => {
@@ -16,8 +18,20 @@ const restricted = (req, res, next) => {
 
     Put the decoded token in the req object, to make life easier for middlewares downstream!
   */
- next()
-}
+      const token = req.headers.authorization;
+      if (!token) {
+        return res.status(401).json({ message: "Token required" });
+      }
+    
+      jwt.verify(token, JWT_SECRET, (err, decoded) => {
+        if (err) {
+          return res.status(401).json({ message: "Token invalid" });
+        }
+    
+        req.decodedToken = decoded;
+        next();
+      });
+    };
 
 const only = role_name => (req, res, next) => {
   /*
@@ -30,11 +44,17 @@ const only = role_name => (req, res, next) => {
 
     Pull the decoded token from the req object, to avoid verifying it again!
   */
- next()
-}
+      const { decodedToken } = req;
+      if (decodedToken && decodedToken.role_name === role_name) {
+        next();
+      } else {
+        res.status(403).json({ message: "This is not for you" });
+      }
+    };
 
 
-const checkUsernameExists = (req, res, next) => {
+
+const checkUsernameExists = async (req, res, next) => {
   /*
     If the username in req.body does NOT exist in the database
     status 401
@@ -42,8 +62,19 @@ const checkUsernameExists = (req, res, next) => {
       "message": "Invalid credentials"
     }
   */
- next()
-}
+      const { username } = req.body;
+    
+      try {
+        const [user] = await User.findBy({ username }); 
+        if (!user) {
+          return res.status(401).json({ message: "Invalid credentials" });
+        }
+        req.user = user; 
+        next();
+      } catch (err) {
+        next(err);
+      }
+    };
 
 
 const validateRoleName = (req, res, next) => {
@@ -73,6 +104,7 @@ const validateRoleName = (req, res, next) => {
  } else if (req.body.role_name.trim().length > 32) {
   next({status: 422, message: "Role name can not be longer than 32 chars" })
  } else {
+  req.role_name = req.body.role_name.trim()
   next()
  }
 }
